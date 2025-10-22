@@ -1,0 +1,9 @@
+
+// Si esta en el path
+
+streamlit run app_streamlit.py
+
+
+// Si no esá en el path
+
+python -m streamlit run app_streamlit.py
