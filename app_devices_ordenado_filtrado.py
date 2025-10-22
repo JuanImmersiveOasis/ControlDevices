@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 from datetime import datetime, date
+import os
+from dotenv import load_dotenv
 
 
 # Configuración de la página
@@ -23,8 +25,11 @@ with title_col:
 st.markdown("Consulta qué dispositivos están disponibles para alquilar en un rango de fechas")
 st.markdown("---")
 
+# Cargar variables de entorno desde el archivo .env
+load_dotenv()
+
 # Configuración de Notion
-NOTION_TOKEN = "***REMOVED***2f"
+NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_VERSION = "2022-06-28"
 DEVICES_ID = "28d58a35e41180dd8080d1953c15ac23"
 LOCATIONS_ID = "28d58a35e41180f78235ec7f5132e6d7"
