@@ -3,10 +3,7 @@ import requests
 from datetime import datetime, date
 
 
-# ============================================
-# CONFIGURACIÓN DE LA PÁGINA
-# ============================================
-
+# Configuración de la página
 st.set_page_config(
     page_title="Disponibilidad de dispositivos",
     page_icon="",
@@ -26,11 +23,7 @@ with title_col:
 st.markdown("Consulta qué dispositivos están disponibles para alquilar en un rango de fechas")
 st.markdown("---")
 
-
-# ============================================
-# CONFIGURACIÓN DE NOTION
-# ============================================
-
+# Configuración de Notion
 NOTION_TOKEN = "***REMOVED***2f"
 NOTION_VERSION = "2022-06-28"
 DEVICES_ID = "28d58a35e41180dd8080d1953c15ac23"
@@ -43,20 +36,8 @@ headers = {
 }
 
 
-# ============================================
-# FUNCIONES PARA OBTENER DATOS DE NOTION
-# ============================================
-
 def get_pages(database_id):
-    """
-    Obtiene todas las páginas de una base de datos de Notion
-    
-    Parámetros:
-    - database_id: ID de la base de datos en Notion
-    
-    Retorna:
-    - Lista con todas las páginas encontradas
-    """
+    """Obtiene todas las páginas de una base de datos de Notion"""
     url = f"https://api.notion.com/v1/databases/{database_id}/query"
     payload = {"page_size": 100}
     
@@ -67,22 +48,14 @@ def get_pages(database_id):
 
 
 def extract_device_data(page):
-    """
-    Extrae los campos específicos de cada dispositivo
-    
-    Parámetros:
-    - page: Una página individual de Notion (un dispositivo)
-    
-    Retorna:
-    - Diccionario con los datos del dispositivo
-    """
+    """Extrae los campos específicos de cada dispositivo"""
     props = page["properties"]
     device_data = {}
     
     # Extraer ID de la página
     device_data["id"] = page["id"]
     
-    # Extraer Name (nombre del dispositivo)
+    # Extraer Name
     try:
         if props.get("Name") and props["Name"]["title"]:
             device_data["Name"] = props["Name"]["title"][0]["text"]["content"]
@@ -91,17 +64,7 @@ def extract_device_data(page):
     except:
         device_data["Name"] = "Sin nombre"
     
-    # 🆕 NUEVO: Extraer Tags (tipo de dispositivo)
-    # Este campo nos permitirá filtrar por tipo
-    try:
-        if props.get("Tags") and props["Tags"].get("select"):
-            device_data["Tags"] = props["Tags"]["select"]["name"]
-        else:
-            device_data["Tags"] = "Sin categoría"
-    except:
-        device_data["Tags"] = "Sin categoría"
-    
-    # Extraer Locations_demo (ubicaciones relacionadas)
+    # Extraer Locations_demo
     try:
         if props.get("📍 Locations_demo") and props["📍 Locations_demo"]["relation"]:
             location_ids = [rel["id"] for rel in props["📍 Locations_demo"]["relation"]]
@@ -111,7 +74,7 @@ def extract_device_data(page):
     except:
         device_data["Locations_demo_count"] = 0
     
-    # Extraer Start Date (fecha de inicio)
+    # Extraer Start Date
     try:
         if props.get("Start Date") and props["Start Date"]["rollup"]:
             rollup = props["Start Date"]["rollup"]
@@ -130,7 +93,7 @@ def extract_device_data(page):
     except:
         device_data["Start Date"] = None
     
-    # Extraer End Date (fecha de fin)
+    # Extraer End Date
     try:
         if props.get("End Date") and props["End Date"]["rollup"]:
             rollup = props["End Date"]["rollup"]
@@ -153,17 +116,7 @@ def extract_device_data(page):
 
 
 def check_availability(device, start_date, end_date):
-    """
-    Verifica si un dispositivo está disponible en el rango de fechas
-    
-    Parámetros:
-    - device: Diccionario con los datos del dispositivo
-    - start_date: Fecha de inicio del alquiler (objeto date)
-    - end_date: Fecha de fin del alquiler (objeto date)
-    
-    Retorna:
-    - True si está disponible, False si está ocupado
-    """
+    """Verifica si un dispositivo está disponible en el rango de fechas"""
     
     # Sin ubicación = disponible
     if device["Locations_demo_count"] == 0:
@@ -177,7 +130,7 @@ def check_availability(device, start_date, end_date):
     if device_start is None and device_end is None:
         return False
     
-    # Convertir strings a objetos date para poder compararlos
+    # Convertir strings a objetos date
     try:
         if device_start:
             device_start_date = datetime.fromisoformat(device_start).date()
@@ -191,8 +144,7 @@ def check_availability(device, start_date, end_date):
     except:
         return False
     
-    # Verificar solapamiento de fechas
-    # Si las fechas se solapan, el dispositivo NO está disponible
+    # Verificar solapamiento
     if device_start_date and device_end_date:
         if (start_date <= device_end_date and end_date >= device_start_date):
             return False
@@ -215,12 +167,7 @@ def check_availability(device, start_date, end_date):
 
 
 def get_in_house_locations():
-    """
-    Obtiene locations de tipo In House con contador de devices desde campo Units
-    
-    Retorna:
-    - Lista de diccionarios con las ubicaciones In House
-    """
+    """Obtiene locations de tipo In House con contador de devices desde campo Units"""
     url = f"https://api.notion.com/v1/databases/{LOCATIONS_ID}/query"
     
     payload = {
@@ -249,12 +196,19 @@ def get_in_house_locations():
         except:
             name = "Sin nombre"
         
-        # Extraer device count del campo Units
+        # Extraer Units (contador de devices)
+        device_count = 0
         try:
-            if props.get("Units") and props["Units"]["number"] is not None:
-                device_count = props["Units"]["number"]
-            else:
-                device_count = 0
+            if props.get("Units"):
+                # Units puede ser de tipo "rollup" o "number"
+                if props["Units"].get("rollup"):
+                    # Si es rollup
+                    rollup = props["Units"]["rollup"]
+                    if rollup["type"] == "number" and rollup.get("number") is not None:
+                        device_count = int(rollup["number"])
+                elif props["Units"].get("number") is not None:
+                    # Si es campo numérico directo
+                    device_count = int(props["Units"]["number"])
         except:
             device_count = 0
         
@@ -267,57 +221,29 @@ def get_in_house_locations():
     return locations
 
 
-def create_location(name, location_type, start_date, end_date=None):
-    """
-    Crea una nueva ubicación en Notion
-    
-    Parámetros:
-    - name: Nombre de la ubicación
-    - location_type: Tipo de ubicación ("Client" o "In House")
-    - start_date: Fecha de inicio
-    - end_date: Fecha de fin (opcional)
-    
-    Retorna:
-    - ID de la ubicación creada o None si hay error
-    """
+def create_client_location(name, start_date, end_date):
+    """Crea un nuevo location tipo Client con fechas"""
     url = "https://api.notion.com/v1/pages"
     
-    # Preparar las propiedades básicas
-    properties = {
-        "Name": {
-            "title": [
-                {
-                    "text": {
-                        "content": name
-                    }
-                }
-            ]
-        },
-        "Type": {
-            "select": {
-                "name": location_type
-            }
-        },
-        "Start": {
-            "date": {
-                "start": start_date.isoformat()
-            }
-        }
-    }
-    
-    # Añadir End date si existe
-    if end_date:
-        properties["End"] = {
-            "date": {
-                "start": end_date.isoformat()
-            }
-        }
+    start_date_iso = start_date.isoformat()
+    end_date_iso = end_date.isoformat()
     
     payload = {
-        "parent": {
-            "database_id": LOCATIONS_ID
-        },
-        "properties": properties
+        "parent": {"database_id": LOCATIONS_ID},
+        "properties": {
+            "Name": {
+                "title": [{"text": {"content": name}}]
+            },
+            "Type": {
+                "select": {"name": "Client"}
+            },
+            "Start Date": {
+                "date": {"start": start_date_iso}
+            },
+            "End Date": {
+                "date": {"start": end_date_iso}
+            }
+        }
     }
     
     response = requests.post(url, json=payload, headers=headers)
@@ -325,320 +251,262 @@ def create_location(name, location_type, start_date, end_date=None):
     if response.status_code == 200:
         return response.json()["id"]
     else:
-        st.error(f"Error al crear ubicación: {response.text}")
+        st.error(f"Error al crear location Client: {response.status_code} - {response.text}")
         return None
 
 
 def create_in_house_location(name, start_date):
-    """
-    Crea una ubicación In House (sin fecha de fin)
+    """Crea un nuevo location tipo In House solo con Start Date"""
+    url = "https://api.notion.com/v1/pages"
     
-    Parámetros:
-    - name: Nombre de la ubicación
-    - start_date: Fecha de inicio
+    start_date_iso = start_date.isoformat()
     
-    Retorna:
-    - ID de la ubicación creada
-    """
-    return create_location(name, "In House", start_date, end_date=None)
+    payload = {
+        "parent": {"database_id": LOCATIONS_ID},
+        "properties": {
+            "Name": {
+                "title": [{"text": {"content": name}}]
+            },
+            "Type": {
+                "select": {"name": "In House"}
+            },
+            "Start Date": {
+                "date": {"start": start_date_iso}
+            }
+            # No incluir End Date para In House
+        }
+    }
+    
+    response = requests.post(url, json=payload, headers=headers)
+    
+    if response.status_code == 200:
+        return response.json()["id"]
+    else:
+        st.error(f"Error al crear location In House: {response.status_code} - {response.text}")
+        return None
 
 
 def update_device_location(device_id, location_id):
-    """
-    Actualiza la ubicación de un dispositivo en Notion
-    
-    Parámetros:
-    - device_id: ID del dispositivo en Notion
-    - location_id: ID de la ubicación a asignar
-    
-    Retorna:
-    - True si la actualización fue exitosa, False si hubo error
-    """
+    """Actualiza un dispositivo asignándole un location"""
     url = f"https://api.notion.com/v1/pages/{device_id}"
     
     payload = {
         "properties": {
             "📍 Locations_demo": {
-                "relation": [
-                    {
-                        "id": location_id
-                    }
-                ]
+                "relation": [{"id": location_id}]
             }
         }
     }
     
     response = requests.patch(url, json=payload, headers=headers)
-    
-    if response.status_code == 200:
-        return True
-    else:
-        st.error(f"Error al actualizar dispositivo: {response.text}")
-        return False
+    return response.status_code == 200
 
 
-def assign_devices_client(device_names, client_name, start_date, end_date, available_devices):
-    """
-    Asigna dispositivos a un nuevo cliente
+def update_location_start_date(location_id, start_date):
+    """Actualiza la Start Date de un location"""
+    url = f"https://api.notion.com/v1/pages/{location_id}"
     
-    Parámetros:
-    - device_names: Lista de nombres de dispositivos a asignar
-    - client_name: Nombre del cliente/destino
-    - start_date: Fecha de inicio del alquiler
-    - end_date: Fecha de fin del alquiler
-    - available_devices: Lista con todos los dispositivos disponibles
+    start_date_iso = start_date.isoformat()
     
-    Retorna:
-    - True si la asignación fue exitosa, False si hubo error
-    """
-    if not client_name or client_name.strip() == "":
+    payload = {
+        "properties": {
+            "Start Date": {
+                "date": {"start": start_date_iso}
+            }
+        }
+    }
+    
+    response = requests.patch(url, json=payload, headers=headers)
+    return response.status_code == 200
+
+
+def assign_devices_client(device_names, location_name, start_date, end_date, all_devices):
+    """Asigna dispositivos a un nuevo location tipo Client"""
+    
+    # Validar nombre
+    if not location_name or location_name.strip() == "":
         st.error("⚠️ El nombre del destino no puede estar vacío")
         return False
     
-    with st.spinner("Creando ubicación y asignando dispositivos..."):
-        # Crear nueva ubicación Client
-        location_id = create_location(client_name, "Client", start_date, end_date)
-        
-        if not location_id:
-            return False
-        
-        # Actualizar cada dispositivo
-        success_count = 0
-        for device_name in device_names:
-            # Buscar el device_id por nombre
-            device = next((d for d in available_devices if d["Name"] == device_name), None)
-            
-            if device:
-                if update_device_location(device["id"], location_id):
-                    success_count += 1
-        
-        if success_count == len(device_names):
-            st.success(f"✅ {success_count} dispositivos asignados correctamente a '{client_name}'")
-            return True
-        else:
-            st.warning(f"⚠️ Solo se asignaron {success_count} de {len(device_names)} dispositivos")
-            return False
+    # Crear nuevo location Client
+    with st.spinner("Creando nuevo destino..."):
+        location_id = create_client_location(location_name, start_date, end_date)
+    
+    if not location_id:
+        return False
+    
+    # Asignar devices
+    device_ids = [d["id"] for d in all_devices if d["Name"] in device_names]
+    success_count = 0
+    
+    with st.spinner(f"Asignando {len(device_ids)} dispositivos..."):
+        for device_id in device_ids:
+            if update_device_location(device_id, location_id):
+                success_count += 1
+    
+    if success_count == len(device_ids):
+        st.success(f"✅ ¡Éxito! {success_count} dispositivos asignados al destino '{location_name}'")
+        return True
+    else:
+        st.warning(f"⚠️ Se asignaron {success_count} de {len(device_ids)} dispositivos")
+        return False
 
 
-def assign_devices_in_house(device_names, location_id, location_name, start_date, available_devices):
-    """
-    Asigna dispositivos a una ubicación In House
+def assign_devices_in_house(device_names, location_id, location_name, start_date, all_devices):
+    """Asigna dispositivos a un location In House existente y actualiza Start Date"""
     
-    Parámetros:
-    - device_names: Lista de nombres de dispositivos a asignar
-    - location_id: ID de la ubicación In House
-    - location_name: Nombre de la ubicación
-    - start_date: Fecha de inicio
-    - available_devices: Lista con todos los dispositivos disponibles
+    # Actualizar Start Date del location
+    with st.spinner("Actualizando fecha de inicio..."):
+        if not update_location_start_date(location_id, start_date):
+            st.warning("⚠️ No se pudo actualizar la fecha de inicio del location")
     
-    Retorna:
-    - True si la asignación fue exitosa, False si hubo error
-    """
-    with st.spinner("Asignando dispositivos..."):
-        # Actualizar cada dispositivo
-        success_count = 0
-        for device_name in device_names:
-            # Buscar el device_id por nombre
-            device = next((d for d in available_devices if d["Name"] == device_name), None)
-            
-            if device:
-                if update_device_location(device["id"], location_id):
-                    success_count += 1
-        
-        if success_count == len(device_names):
-            st.success(f"✅ {success_count} dispositivos asignados correctamente a '{location_name}'")
-            return True
-        else:
-            st.warning(f"⚠️ Solo se asignaron {success_count} de {len(device_names)} dispositivos")
-            return False
+    # Asignar devices
+    device_ids = [d["id"] for d in all_devices if d["Name"] in device_names]
+    success_count = 0
+    
+    with st.spinner(f"Asignando {len(device_ids)} dispositivos..."):
+        for device_id in device_ids:
+            if update_device_location(device_id, location_id):
+                success_count += 1
+    
+    if success_count == len(device_ids):
+        st.success(f"✅ ¡Éxito! {success_count} dispositivos asignados a '{location_name}'")
+        return True
+    else:
+        st.warning(f"⚠️ Se asignaron {success_count} de {len(device_ids)} dispositivos")
+        return False
 
 
 # ============================================
-# INTERFAZ PRINCIPAL
+# INTERFAZ DE STREAMLIT
 # ============================================
 
-# Inicializar session_state
-if 'selected_devices' not in st.session_state:
-    st.session_state.selected_devices = []
 
-if 'search_completed' not in st.session_state:
-    st.session_state.search_completed = False
-
-if 'available_devices' not in st.session_state:
-    st.session_state.available_devices = []
-
-# 🆕 NUEVO: Inicializar filtro de tipo de dispositivo
-if 'selected_type_filter' not in st.session_state:
-    st.session_state.selected_type_filter = "Todos"
-
-# Selector de fechas
-st.subheader("📅 Selecciona el rango de fechas")
-
+# Selección de fechas
 col1, col2 = st.columns(2)
 
 with col1:
     start_date = st.date_input(
-        "Fecha de inicio",
+        "📅 Fecha de Inicio",
         value=date.today(),
-        format="DD/MM/YYYY",
-        key="start_date_input"
+        format="DD/MM/YYYY"
     )
 
 with col2:
     end_date = st.date_input(
-        "Fecha de fin",
+        "📅 Fecha de Fin",
         value=date.today(),
-        format="DD/MM/YYYY",
-        key="end_date_input"
+        format="DD/MM/YYYY"
     )
 
-# Validar que la fecha de fin sea posterior a la de inicio
-if start_date > end_date:
+# Validar fechas
+if end_date < start_date:
     st.error("⚠️ La fecha de fin debe ser posterior a la fecha de inicio")
     st.stop()
 
+# Mostrar solo los días de duración
+days_duration = (end_date - start_date).days + 1
+st.info(f"📊 Duración: **{days_duration} días**")
+
 st.markdown("---")
 
-# Botón para consultar disponibilidad
+# Botón de búsqueda
 if st.button("🔍 Consultar Disponibilidad", type="primary", use_container_width=True):
-    with st.spinner("Consultando dispositivos..."):
-        # Obtener todos los dispositivos
+    with st.spinner("Consultando dispositivos en Notion..."):
+        # Obtener dispositivos
         pages = get_pages(DEVICES_ID)
-        
         all_devices = []
+        
         for page in pages:
             device_data = extract_device_data(page)
-            all_devices.append(device_data)
-        
-        # Filtrar dispositivos disponibles
-        available_devices = [
-            device for device in all_devices 
-            if check_availability(device, start_date, end_date)
-        ]
-        
-        # 🆕 ORDENAR ALFABÉTICAMENTE por nombre (de A a Z)
-        # La función sorted() ordena la lista
-        # key=lambda x: x['Name'].lower() significa: ordena por el campo 'Name' en minúsculas
-        # Usamos .lower() para que "iPad" e "iphone" se ordenen correctamente
-        available_devices_sorted = sorted(available_devices, key=lambda x: x['Name'].lower())
+            is_available = check_availability(device_data, start_date, end_date)
+            
+            if is_available:
+                all_devices.append(device_data)
         
         # Guardar en session_state
-        st.session_state.available_devices = available_devices_sorted
+        st.session_state.available_devices = all_devices
+        st.session_state.total_devices = len(pages)
         st.session_state.search_completed = True
         st.session_state.query_start_date = start_date
         st.session_state.query_end_date = end_date
-        st.session_state.selected_devices = []
-        # 🆕 Resetear el filtro a "Todos" al hacer una nueva búsqueda
-        st.session_state.selected_type_filter = "Todos"
+        
+        # Inicializar selección vacía
+        if "selected_devices" not in st.session_state:
+            st.session_state.selected_devices = []
 
+# Mostrar resultado justo debajo del botón
+if st.session_state.get("search_completed"):
+    available_devices = st.session_state.available_devices
+    total_devices = st.session_state.total_devices
+    
+    # Resultado compacto
+    st.info(f"📊 Resultado: **{len(available_devices)}/{total_devices}** dispositivos disponibles")
+
+# Línea divisoria
 st.markdown("---")
 
-# Mostrar resultados si la búsqueda se ha completado
-if st.session_state.search_completed:
+# Mostrar lista de dispositivos
+if st.session_state.get("search_completed"):
     available_devices = st.session_state.available_devices
     
+    # Lista de dispositivos disponibles
     if available_devices:
-        # 🆕 NUEVO: SWITCH PARA FILTRAR POR TIPO DE DISPOSITIVO
-        st.subheader("🔘 Filtrar por tipo de dispositivo")
+        # Inicializar selected_devices si no existe
+        if "selected_devices" not in st.session_state:
+            st.session_state.selected_devices = []
         
-        # Extraer todos los tipos (Tags) únicos que existen
-        # set() elimina duplicados, sorted() los ordena alfabéticamente
-        all_types = sorted(list(set([d['Tags'] for d in available_devices])))
+        # Mostrar en dos columnas
+        col1, col2 = st.columns(2)
         
-        # Crear botones tipo "pills" en columnas
-        # +1 para incluir el botón "Todos"
-        cols = st.columns(len(all_types) + 1)
-        
-        # Botón "Todos"
-        with cols[0]:
-            # Si "Todos" está seleccionado, el botón será azul (primary)
-            button_type = "primary" if st.session_state.selected_type_filter == "Todos" else "secondary"
-            if st.button("🔵 Todos", use_container_width=True, type=button_type):
-                st.session_state.selected_type_filter = "Todos"
-                st.rerun()  # Recargar para aplicar el filtro
-        
-        # Botón para cada tipo
-        for idx, device_type in enumerate(all_types):
-            with cols[idx + 1]:
-                # Si este tipo está seleccionado, el botón será azul (primary)
-                button_type = "primary" if st.session_state.selected_type_filter == device_type else "secondary"
-                if st.button(f"📱 {device_type}", use_container_width=True, type=button_type, key=f"type_{device_type}"):
-                    st.session_state.selected_type_filter = device_type
-                    st.rerun()  # Recargar para aplicar el filtro
-        
-        st.markdown("---")
-        
-        # 🆕 Aplicar el filtro de tipo si no es "Todos"
-        filtered_devices = available_devices
-        if st.session_state.selected_type_filter != "Todos":
-            filtered_devices = [
-                d for d in available_devices 
-                if d['Tags'] == st.session_state.selected_type_filter
-            ]
-        
-        # Mostrar información del resultado
-        query_start = st.session_state.query_start_date
-        query_end = st.session_state.query_end_date
-        
-        st.success(
-            f"✅ **{len(filtered_devices)} dispositivos disponibles** "
-            f"del {query_start.strftime('%d/%m/%Y')} al {query_end.strftime('%d/%m/%Y')}"
-        )
-        
-        # 🆕 Mostrar información del filtro activo si no es "Todos"
-        if st.session_state.selected_type_filter != "Todos":
-            st.info(f"🔍 Mostrando solo: **{st.session_state.selected_type_filter}** ({len(filtered_devices)} de {len(available_devices)} dispositivos)")
-        
-        st.markdown("---")
-        
-        # Mostrar lista de dispositivos
-        st.subheader("📋 Dispositivos disponibles")
-        
-        # Mostrar cada dispositivo con un checkbox
-        for device in filtered_devices:
-            device_name = device["Name"]
-            device_type = device["Tags"]
+        for idx, device in enumerate(available_devices):
+            # Alternar entre columnas
+            current_col = col1 if idx % 2 == 0 else col2
             
-            # Verificar si este dispositivo está seleccionado
-            is_checked = device_name in st.session_state.selected_devices
-            
-            # Crear layout: checkbox + nombre en cajetín
-            inner_col1, inner_col2 = st.columns([0.5, 9.5])
-            
-            with inner_col1:
-                # Checkbox
-                checkbox_value = st.checkbox(
-                    "",
-                    value=is_checked,
-                    key=f"checkbox_{device_name}",
-                    label_visibility="collapsed"
-                )
+            with current_col:
+                device_name = device['Name']
+                device_key = f"device_{device_name}"
                 
-                # Actualizar lista de seleccionados
-                if checkbox_value and device_name not in st.session_state.selected_devices:
-                    st.session_state.selected_devices.append(device_name)
-                elif not checkbox_value and device_name in st.session_state.selected_devices:
-                    st.session_state.selected_devices.remove(device_name)
-            
-            with inner_col2:
-                # Nombre en cajetín con el tipo de dispositivo
-                st.markdown(
-                    f"""
-                    <div style='padding: 8px 12px; 
-                                background-color: {"#B3E5E6" if checkbox_value else "#e0e0e0"}; 
-                                border-radius: 6px; 
-                                margin-top: -8px;
-                                border-left: 4px solid {"#00859B" if checkbox_value else "#9e9e9e"};'>
-                        <p style='margin: 0; font-size: 16px; font-weight: 500; color: #333;'>
-                            {device_name} <span style='color: #666; font-size: 14px;'>({device_type})</span>
-                        </p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-            
-            # Espacio entre dispositivos
-            st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+                # Cajetín que contiene checkbox + nombre en la misma línea
+                is_selected = device_name in st.session_state.selected_devices
+                
+                # Crear dos columnas dentro del cajetín: una para checkbox, otra para nombre
+                inner_col1, inner_col2 = st.columns([0.1, 0.9])
+                
+                with inner_col1:
+                    # Checkbox
+                    checkbox_value = st.checkbox(
+                        "",
+                        key=device_key,
+                        value=is_selected,
+                        label_visibility="collapsed"
+                    )
+                    
+                    # Actualizar selección
+                    if checkbox_value and device_name not in st.session_state.selected_devices:
+                        st.session_state.selected_devices.append(device_name)
+                    elif not checkbox_value and device_name in st.session_state.selected_devices:
+                        st.session_state.selected_devices.remove(device_name)
+                
+                with inner_col2:
+                    # Nombre en cajetín
+                    st.markdown(
+                        f"""
+                        <div style='padding: 8px 12px; 
+                                    background-color: {"#B3E5E6" if checkbox_value else "#e0e0e0"}; 
+                                    border-radius: 6px; 
+                                    margin-top: -8px;
+                                    border-left: 4px solid {"#00859B" if checkbox_value else "#9e9e9e"};'>
+                            <p style='margin: 0; font-size: 16px; font-weight: 500; color: #333;'>
+                                {device_name}
+                            </p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                
+                # Espacio entre dispositivos
+                st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
         
         # Mostrar formulario de asignación si hay dispositivos seleccionados
         if st.session_state.selected_devices:
@@ -651,6 +519,8 @@ if st.session_state.search_completed:
                 ["Client", "In House"],
                 index=0  # Client por defecto
             )
+            
+        
             
             # Información de dispositivos seleccionados
             selected_list = ", ".join(st.session_state.selected_devices)
