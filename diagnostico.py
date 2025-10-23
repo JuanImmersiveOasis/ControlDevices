@@ -1,8 +1,10 @@
 import requests
 import json
+import os
+
 
 # Configuración de Notion
-NOTION_TOKEN = "***REMOVED***2f"
+NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_VERSION = "2022-06-28"
 DEVICES_ID = "28d58a35e41180dd8080d1953c15ac23"
 
