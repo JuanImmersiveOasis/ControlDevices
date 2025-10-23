@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 from datetime import datetime, date
 import os
+from dotenv import load_dotenv
 
 
 # Configuración de la página
@@ -24,11 +25,14 @@ with title_col:
 st.markdown("Consulta qué dispositivos están disponibles para alquilar en un rango de fechas")
 st.markdown("---")
 
+# Cargar variables de entorno desde el archivo .env
+load_dotenv()
+
 # Configuración de Notion
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_VERSION = "2022-06-28"
-DEVICES_ID = "28d58a35e41180dd8080d1953c15ac23"
-LOCATIONS_ID = "28d58a35e41180f78235ec7f5132e6d7"
+DEVICES_ID = "43e15b677c8c4bd599d7c602f281f1da"
+LOCATIONS_ID = "28758a35e4118045abe6e37534c44974"
 
 headers = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
@@ -65,10 +69,25 @@ def extract_device_data(page):
     except:
         device_data["Name"] = "Sin nombre"
     
+    # ========================================
+    # 🔹 CORREGIDO: Extraer Tags (campo SELECT, no multi_select)
+    # ========================================
+    # Tags es un campo "select" que contiene UN SOLO VALOR
+    # Ejemplo: "Ultra" o "Neo 4"
+    try:
+        if props.get("Tags") and props["Tags"]["select"]:
+            # Extraemos el nombre del tag seleccionado
+            device_data["Tags"] = props["Tags"]["select"]["name"]
+        else:
+            device_data["Tags"] = "Sin tag"
+    except:
+        device_data["Tags"] = "Sin tag"
+    # ========================================
+    
     # Extraer Locations_demo
     try:
-        if props.get("📍 Locations_demo") and props["📍 Locations_demo"]["relation"]:
-            location_ids = [rel["id"] for rel in props["📍 Locations_demo"]["relation"]]
+        if props.get("Location") and props["Location"]["relation"]:
+            location_ids = [rel["id"] for rel in props["Location"]["relation"]]
             device_data["Locations_demo_count"] = len(location_ids)
         else:
             device_data["Locations_demo_count"] = 0
@@ -328,14 +347,14 @@ def assign_devices_client(device_names, client_name, start_date, end_date, avail
         
         payload_device = {
             "properties": {
-                "📍 Locations_demo": {
+                "Location": {   # Cambiado de 📍 Locations_demo
                     "relation": [
                         {"id": location_id}
                     ]
                 }
             }
         }
-        
+                
         response_device = requests.patch(f"{url_patch}{device_id}", json=payload_device, headers=headers)
         
         if response_device.status_code == 200:
@@ -381,7 +400,7 @@ def assign_devices_in_house(device_names, location_id, location_name, start_date
         
         payload_device = {
             "properties": {
-                "📍 Locations_demo": {
+                "Location": {   # Cambiado de 📍 Locations_demo
                     "relation": [
                         {"id": location_id}
                     ]
@@ -478,21 +497,59 @@ if st.session_state.search_completed:
         st.success(f"✅ Hay {len(available_devices)} dispositivos disponibles")
         
         # ========================================
-        # 🔹 CAMBIO PRINCIPAL: ORDENAR ALFABÉTICAMENTE
+        # 🔹 CORREGIDO: Obtener tags únicos (select, no multi_select)
         # ========================================
-        # Ordenamos la lista de dispositivos por el campo "Name"
-        # El método sorted() crea una nueva lista ordenada sin modificar la original
-        # key=lambda d: d["Name"] significa "ordena según el valor del campo Name"
-        # El resultado es que los dispositivos se muestran de la A a la Z
-        available_devices_sorted = sorted(available_devices, key=lambda d: d["Name"])
+        # Como Tags es un campo "select" con un solo valor por dispositivo,
+        # simplemente recopilamos todos los valores únicos
+        
+        unique_tags = set()  # Set para evitar duplicados
+        for device in available_devices:
+            # Cada dispositivo tiene un solo tag (string)
+            if device["Tags"] and device["Tags"] != "Sin tag":
+                unique_tags.add(device["Tags"])
+        
+        # Convertir a lista ordenada
+        unique_tags = sorted(unique_tags)
+        
+        # Añadir "Todos" como primera opción
+        filter_options = ["Todos"] + unique_tags
         # ========================================
+        
+        # ========================================
+        # 🔹 Selector de filtro por Tag
+        # ========================================
+        st.markdown("---")
+        selected_tag = st.selectbox(
+            "🔍 Filtrar por etiqueta",
+            options=filter_options,
+            index=0  # "Todos" seleccionado por defecto
+        )
+        # ========================================
+        
+        # ========================================
+        # 🔹 CORREGIDO: Aplicar filtro (comparación directa)
+        # ========================================
+        # Ahora comparamos directamente el string del tag
+        if selected_tag == "Todos":
+            filtered_devices = available_devices
+        else:
+            # Filtramos: un dispositivo se incluye si su tag coincide exactamente
+            filtered_devices = [d for d in available_devices if d["Tags"] == selected_tag]
+        # ========================================
+        
+        # Mostrar contador de dispositivos filtrados
+        if selected_tag != "Todos":
+            st.info(f"📊 Mostrando {len(filtered_devices)} dispositivos con etiqueta '{selected_tag}'")
+        
+        # Ordenar alfabéticamente los dispositivos filtrados
+        available_devices_sorted = sorted(filtered_devices, key=lambda d: d["Name"])
         
         # Selector de dispositivos con checkboxes
         st.markdown("---")
-        st.subheader("📱 Selecciona los dispositivos que quieres asignar")
+        st.subheader("Selecciona los dispositivos que quieres asignar")
         
-        # Ahora usamos la lista ORDENADA para mostrar los dispositivos
-        for device in available_devices_sorted:  # 🔹 AQUÍ usamos la lista ordenada
+        # Mostrar los dispositivos ordenados y filtrados
+        for device in available_devices_sorted:
             device_name = device["Name"]
             
             # Columnas para checkbox y cajetín
@@ -514,7 +571,7 @@ if st.session_state.search_completed:
                     st.session_state.selected_devices.remove(device_name)
             
             with inner_col2:
-                # Nombre en cajetín
+                # Solo mostrar el nombre (sin tags)
                 st.markdown(
                     f"""
                     <div style='padding: 8px 12px; 
@@ -577,12 +634,13 @@ if st.session_state.search_completed:
                     query_start = st.session_state.query_start_date
                     query_end = st.session_state.query_end_date
                     
+                    # Usamos available_devices original (lista completa)
                     success = assign_devices_client(
                         st.session_state.selected_devices,
                         client_name,
                         query_start,
                         query_end,
-                        available_devices
+                        st.session_state.available_devices
                     )
                     
                     if success:
@@ -624,7 +682,7 @@ if st.session_state.search_completed:
                                     location_id,
                                     new_in_house_name,
                                     today,
-                                    available_devices
+                                    st.session_state.available_devices
                                 )
                                 
                                 if success:
@@ -670,7 +728,7 @@ if st.session_state.search_completed:
                                         location_id,
                                         new_in_house_name,
                                         today,
-                                        available_devices
+                                        st.session_state.available_devices
                                     )
                                     
                                     if success:
@@ -687,7 +745,7 @@ if st.session_state.search_completed:
                             selected_location_id,
                             selected_location_name,
                             today,
-                            available_devices
+                            st.session_state.available_devices
                         )
                         
                         if success:
